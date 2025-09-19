@@ -14,7 +14,7 @@ app.use(express.json())
 console.log(process.env.OLLAMA_URL);
 
 // Gemini configuration
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'AIzaSyDZlHR9j5S1-6zxgT0M_21mroB_DZ0sBp0'
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY 
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-1.5-flash'
 const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`
 
