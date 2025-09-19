@@ -3,9 +3,6 @@ import { Highlight, themes } from 'prism-react-renderer'
 import { Play, Code, Eye, Copy, Check, Shield, Download, History, Undo, Redo } from 'lucide-react'
 import { CodePanelProps, GeneratedCode } from '../types'
 import ExportPanel from './ExportPanel'
-import EnhancedCodeEditor from './EnhancedCodeEditor'
-import CollaborationPanel from './CollaborationPanel'
-import { useCollaboration } from '../hooks/useCollaboration'
 
 interface CodePanelPropsWithHistory extends CodePanelProps {
   onShowHistory?: () => void;
@@ -16,25 +13,6 @@ function CodePanel({ code, onCodeChange, onCodeHistory, canUndo, canRedo, onVali
   const [activeCodeTab, setActiveCodeTab] = useState<'html' | 'css' | 'js'>('html')
   const [copiedTab, setCopiedTab] = useState<string>('')
   const [showExport, setShowExport] = useState<boolean>(false)
-  const [collaborationEnabled, setCollaborationEnabled] = useState(false)
-
-  // Collaboration hook
-  const collaboration = useCollaboration({
-    roomId: 'default',
-    userId: `user_${Math.random().toString(36).substring(2, 8)}`,
-    userName: 'Anonymous User',
-    onCodeChange: (newCode) => {
-      if (onCodeChange) {
-        onCodeChange({
-          ...code,
-          [activeCodeTab]: newCode
-        })
-      }
-    },
-    onUsersChange: (users) => {
-      console.log('Collaboration users updated:', users)
-    }
-  })
 
   // Debug logging
   useEffect(() => {
@@ -259,52 +237,50 @@ function CodePanel({ code, onCodeChange, onCodeHistory, canUndo, canRedo, onVali
                   )}
                 </button>
               )}
-              <CollaborationPanel
-                isConnected={collaboration.isConnected}
-                users={collaboration.users}
-                isTyping={collaboration.isTyping}
-                typingUsers={collaboration.typingUsers}
-                onInviteUser={() => {
-                  // TODO: Implement invite functionality
-                  console.log('Invite user clicked')
-                }}
-                onSettings={() => {
-                  setCollaborationEnabled(!collaborationEnabled)
-                }}
-                onShareRoom={() => {
-                  // TODO: Implement share room functionality
-                  console.log('Share room clicked')
-                }}
-              />
             </div>
           </div>
           
           <div className="code-content">
             {code[activeCodeTab] ? (
-              <EnhancedCodeEditor
+              <Highlight
+                theme={themes.vsDark}
                 code={code[activeCodeTab]}
                 language={codeTabs.find(t => t.id === activeCodeTab)?.language || 'html'}
-                onCodeChange={(newCode) => {
-                  if (onCodeChange) {
-                    onCodeChange({
-                      ...code,
-                      [activeCodeTab]: newCode
-                    })
-                  }
-                  // Send to collaboration if enabled
-                  if (collaborationEnabled) {
-                    collaboration.sendCodeChange(newCode)
-                  }
-                }}
-                readOnly={false}
-                showLineNumbers={true}
-                theme="dark"
-                fontSize={14}
-                tabSize={2}
-                wordWrap={true}
-                autoComplete={true}
-                onCopy={() => copyToClipboard(code[activeCodeTab], activeCodeTab)}
-              />
+              >
+                {({ className, style, tokens, getLineProps, getTokenProps }) => (
+                  <pre
+                    className={className}
+                    style={{
+                      ...style,
+                      padding: '1rem',
+                      margin: 0,
+                      background: '#0f0f0f',
+                      fontSize: '0.9rem',
+                      lineHeight: '1.5',
+                      overflow: 'auto',
+                      height: '100%'
+                    }}
+                  >
+                    {tokens.map((line, i) => (
+                      <div key={i} {...getLineProps({ line, key: i })}>
+                        <span style={{ 
+                          color: '#666', 
+                          marginRight: '1rem', 
+                          userSelect: 'none',
+                          minWidth: '2rem',
+                          display: 'inline-block',
+                          textAlign: 'right'
+                        }}>
+                          {i + 1}
+                        </span>
+                        {line.map((token, key) => (
+                          <span key={key} {...getTokenProps({ token, key })} />
+                        ))}
+                      </div>
+                    ))}
+                  </pre>
+                )}
+              </Highlight>
             ) : (
               <div style={{
                 display: 'flex',
