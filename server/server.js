@@ -33,16 +33,16 @@ function parseCodeFromResponse(response, userMessage = '') {
   // Clean up the response first
   let cleanResponse = response.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
 
-  // Extract code blocks using simple, robust patterns
+  // Extract code blocks using enhanced patterns
   const codeBlocks = {
-    html: extractCodeBlock(cleanResponse, ['html', 'HTML']),
-    css: extractCodeBlock(cleanResponse, ['css', 'CSS']),
-    js: extractCodeBlock(cleanResponse, ['javascript', 'js', 'JavaScript', 'JS'])
+    html: extractCodeBlock(cleanResponse, ['html', 'HTML', 'htm', 'HTM']),
+    css: extractCodeBlock(cleanResponse, ['css', 'CSS', 'style', 'STYLE']),
+    js: extractCodeBlock(cleanResponse, ['javascript', 'js', 'JavaScript', 'JS', 'script', 'SCRIPT'])
   }
 
-  result.html = codeBlocks.html || ''
-  result.css = codeBlocks.css || ''
-  result.js = codeBlocks.js || ''
+  result.html = validateAndCleanHTML(codeBlocks.html || '')
+  result.css = validateAndCleanCSS(codeBlocks.css || '')
+  result.js = validateAndCleanJS(codeBlocks.js || '')
 
   // Extract explanation - text before first code block or after last code block
   result.explanation = extractExplanation(cleanResponse) || 'Code generated successfully!'
@@ -200,6 +200,40 @@ function extractExplanation(text) {
   return 'Code generated successfully!'
 }
 
+// Enhanced validation and cleaning functions
+function validateAndCleanHTML(html) {
+  if (!html) return ''
+  
+  // Ensure proper HTML structure
+  if (!html.includes('<!DOCTYPE') && !html.includes('<html')) {
+    html = `<!DOCTYPE html>\n<html lang="en">\n<head>\n    <meta charset="UTF-8">\n    <meta name="viewport" content="width=device-width, initial-scale=1.0">\n    <title>Generated App</title>\n</head>\n<body>\n${html}\n</body>\n</html>`
+  }
+  
+  return html.trim()
+}
+
+function validateAndCleanCSS(css) {
+  if (!css) return ''
+  
+  // Add basic reset if not present
+  if (!css.includes('*') && !css.includes('body')) {
+    css = `* { margin: 0; padding: 0; box-sizing: border-box; }\n\nbody {\n    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;\n    line-height: 1.6;\n    color: #333;\n}\n\n${css}`
+  }
+  
+  return css.trim()
+}
+
+function validateAndCleanJS(js) {
+  if (!js) return ''
+  
+  // Wrap in DOMContentLoaded if not already wrapped
+  if (!js.includes('DOMContentLoaded') && !js.includes('window.onload')) {
+    js = `document.addEventListener('DOMContentLoaded', function() {\n${js}\n});`
+  }
+  
+  return js.trim()
+}
+
 // Helper function to create fallback code
 function createFallbackCode(response, userMessage = '') {
   const lowerResponse = (response + ' ' + userMessage).toLowerCase()
@@ -303,75 +337,120 @@ app.post('/api/generate', async (req, res) => {
   try {
     const { message, previousCode, conversationHistory } = req.body
 
-    // Build context for the AI
-    let systemPrompt = `You are a code generator that creates web applications using HTML, CSS, and JavaScript only.
+    // Build context for the AI with enhanced prompt engineering
+    let systemPrompt = `You are an expert web developer specializing in creating modern, responsive web applications using vanilla HTML, CSS, and JavaScript.
 
-Rules:
-1. Always respond with working code in three separate code blocks
-2. Use EXACTLY this format:
+## CRITICAL RULES:
+1. ALWAYS respond with EXACTLY three code blocks in this precise format:
+   - \`\`\`html (complete HTML structure)
+   - \`\`\`css (all styling)
+   - \`\`\`javascript (all functionality)
 
+2. CODE QUALITY STANDARDS:
+   - Write clean, semantic HTML5
+   - Use modern CSS with flexbox/grid
+   - Write efficient, readable JavaScript
+   - Include proper accessibility attributes
+   - Make responsive designs (mobile-first)
+   - Use meaningful class names and IDs
+
+3. FUNCTIONALITY REQUIREMENTS:
+   - Create complete, working applications
+   - Include all necessary event handlers
+   - Handle edge cases and user input validation
+   - Use modern JavaScript (ES6+ features)
+   - No external libraries or frameworks
+   - Ensure cross-browser compatibility
+
+4. RESPONSE FORMAT (MANDATORY):
 \`\`\`html
-[your HTML code here]
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>App Title</title>
+</head>
+<body>
+    <!-- Your HTML content -->
+</body>
+</html>
 \`\`\`
 
 \`\`\`css
-[your CSS code here]
-\`\`\`
+/* Reset and base styles */
+* { margin: 0; padding: 0; box-sizing: border-box; }
 
-\`\`\`javascript
-[your JavaScript code here]
-\`\`\`
-
-3. No external libraries or frameworks
-4. Make functional, complete applications
-5. Always include all three code blocks even if one is empty
-
-Example response format:
-\`\`\`html
-<div class="container">
-  <h1>My App</h1>
-  <button onclick="doSomething()">Click</button>
-</div>
-\`\`\`
-
-\`\`\`css
-.container { padding: 20px; }
-button { background: blue; color: white; padding: 10px; }
-\`\`\`
-
-\`\`\`javascript
-function doSomething() {
-  alert('Hello!');
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    line-height: 1.6;
+    color: #333;
 }
+
+/* Your CSS styles */
 \`\`\`
 
-Now respond to the user's request with this exact format.`
+\`\`\`javascript
+// Your JavaScript code
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize your app
+});
+\`\`\`
+
+## CONTEXT AWARENESS:
+- If modifying existing code, preserve working functionality
+- If creating new code, make it production-ready
+- Always include proper error handling
+- Use modern web standards and best practices
+
+Respond with the exact three-block format above.`
 
     // Build full prompt for Ollama
     let fullPrompt = systemPrompt + '\n\n'
     
-    // Add conversation history
+    // Add conversation history with better context
     if (conversationHistory && conversationHistory.length > 0) {
-      fullPrompt += 'Previous conversation:\n'
-      conversationHistory.forEach(msg => {
-        fullPrompt += `${msg.type}: ${msg.content}\n`
+      fullPrompt += '## CONVERSATION HISTORY:\n'
+      conversationHistory.slice(-5).forEach((msg, index) => {
+        const role = msg.type === 'user' ? 'USER' : 'ASSISTANT'
+        fullPrompt += `${role}: ${msg.content}\n`
       })
       fullPrompt += '\n'
     }
 
-    // Add current request with context - simplified
+    // Add current request with enhanced context
     if (previousCode && (previousCode.html || previousCode.css || previousCode.js)) {
-      fullPrompt += `Modify this existing code based on: ${message}\n\n`
-      fullPrompt += 'Current code:\n'
-      if (previousCode.html) fullPrompt += `HTML: ${previousCode.html}\n`
-      if (previousCode.css) fullPrompt += `CSS: ${previousCode.css}\n`
-      if (previousCode.js) fullPrompt += `JS: ${previousCode.js}\n`
-      fullPrompt += `\nModify the code to: ${message}\n`
+      fullPrompt += `## MODIFICATION REQUEST:\n`
+      fullPrompt += `User wants to modify existing code: "${message}"\n\n`
+      
+      fullPrompt += `## CURRENT CODE TO MODIFY:\n`
+      if (previousCode.html) {
+        fullPrompt += `HTML (${previousCode.html.length} chars):\n${previousCode.html}\n\n`
+      }
+      if (previousCode.css) {
+        fullPrompt += `CSS (${previousCode.css.length} chars):\n${previousCode.css}\n\n`
+      }
+      if (previousCode.js) {
+        fullPrompt += `JavaScript (${previousCode.js.length} chars):\n${previousCode.js}\n\n`
+      }
+      
+      fullPrompt += `## INSTRUCTIONS:\n`
+      fullPrompt += `- Preserve all working functionality\n`
+      fullPrompt += `- Make the requested changes: "${message}"\n`
+      fullPrompt += `- Ensure the code remains complete and functional\n`
+      fullPrompt += `- Update all three code blocks as needed\n\n`
     } else {
-      fullPrompt += `Create: ${message}\n`
+      fullPrompt += `## NEW PROJECT REQUEST:\n`
+      fullPrompt += `User wants to create: "${message}"\n\n`
+      fullPrompt += `## REQUIREMENTS:\n`
+      fullPrompt += `- Create a complete, functional web application\n`
+      fullPrompt += `- Make it responsive and accessible\n`
+      fullPrompt += `- Use modern web standards\n`
+      fullPrompt += `- Include proper error handling\n\n`
     }
     
-    fullPrompt += '\nRespond with code in the three code blocks format shown above.'
+    fullPrompt += `## RESPONSE FORMAT:\n`
+    fullPrompt += `Respond with EXACTLY three code blocks as specified in the rules above.`
 
     console.log(`Calling Gemini with model: ${GEMINI_MODEL}`)
     console.log(`Gemini URL: ${GEMINI_API_URL}`)
