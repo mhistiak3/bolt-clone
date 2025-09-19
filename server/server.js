@@ -13,9 +13,10 @@ app.use(cors())
 app.use(express.json())
 console.log(process.env.OLLAMA_URL);
 
-// Ollama configuration
-const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434'
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'codellama'
+// Gemini configuration
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'AIzaSyDZlHR9j5S1-6zxgT0M_21mroB_DZ0sBp0'
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-1.5-flash'
+const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`
 
 // Helper function to parse AI response and extract code
 function parseCodeFromResponse(response, userMessage = '') {
@@ -372,34 +373,67 @@ Now respond to the user's request with this exact format.`
     
     fullPrompt += '\nRespond with code in the three code blocks format shown above.'
 
-    console.log(`Calling Ollama with model: ${OLLAMA_MODEL}`)
-    console.log(`Ollama URL: ${OLLAMA_URL}/api/generate`)
+    console.log(`Calling Gemini with model: ${GEMINI_MODEL}`)
+    console.log(`Gemini URL: ${GEMINI_API_URL}`)
     
-    // Call Ollama API
-    const response = await fetch(`${OLLAMA_URL}/api/generate`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: OLLAMA_MODEL,
-        prompt: fullPrompt,
-        stream: false,
-        options: {
-          temperature: 0.7,
-          num_predict: 2000
+    // Retry logic for Gemini API
+    let response, data, aiResponse
+    let retries = 3
+    let lastError
+    
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        response = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            contents: [{
+              parts: [{
+                text: fullPrompt
+              }]
+            }],
+            generationConfig: {
+              temperature: 0.7,
+              maxOutputTokens: 2000,
+              topP: 0.8,
+              topK: 10
+            }
+          })
+        })
+
+        if (!response.ok) {
+          const errorText = await response.text()
+          console.error(`Gemini API error (attempt ${attempt}): ${response.status} ${response.statusText}`, errorText)
+          
+          // If it's a 503 or 429 error and we have retries left, wait and try again
+          if ((response.status === 503 || response.status === 429) && attempt < retries) {
+            const waitTime = response.status === 429 ? 30 : (attempt * 2) // Wait longer for quota issues
+            console.log(`Retrying in ${waitTime} seconds...`)
+            await new Promise(resolve => setTimeout(resolve, waitTime * 1000))
+            continue
+          }
+          
+          throw new Error(`Gemini API error: ${response.status} ${response.statusText}. Response: ${errorText}`)
         }
-      })
-    })
 
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error(`Ollama API error: ${response.status} ${response.statusText}`, errorText)
-      throw new Error(`Ollama API error: ${response.status} ${response.statusText}. Response: ${errorText}`)
+        data = await response.json()
+        aiResponse = data.candidates?.[0]?.content?.parts?.[0]?.text || ''
+        break // Success, exit retry loop
+        
+      } catch (error) {
+        lastError = error
+        if (attempt < retries) {
+          console.log(`Attempt ${attempt} failed, retrying in ${attempt * 2} seconds...`)
+          await new Promise(resolve => setTimeout(resolve, attempt * 2000))
+        }
+      }
     }
-
-    const data = await response.json()
-    const aiResponse = data.response
+    
+    if (!aiResponse) {
+      throw lastError || new Error('Failed to get response from Gemini API after all retries')
+    }
     const parsedCode = parseCodeFromResponse(aiResponse, message)
 
     // Smart code merging - if AI provides new code, use it; otherwise keep previous code
@@ -425,11 +459,21 @@ Now respond to the user's request with this exact format.`
   } catch (error) {
     console.error('Error generating code:', error)
     
-    // Check if it's a connection error to Ollama
+    // Check for specific error types
     if (error.code === 'ECONNREFUSED' || error.message.includes('fetch')) {
       res.json({
         success: false,
-        error: 'Could not connect to Ollama. Make sure Ollama is running on localhost:11434 and you have a model installed.'
+        error: 'Could not connect to Gemini API. Please check your internet connection and API key.'
+      })
+    } else if (error.message.includes('429') || error.message.includes('quota')) {
+      res.json({
+        success: false,
+        error: 'Gemini API quota exceeded. Please check your API key limits or try again later.'
+      })
+    } else if (error.message.includes('503')) {
+      res.json({
+        success: false,
+        error: 'Gemini API is temporarily unavailable. Please try again in a few minutes.'
       })
     } else {
       res.json({
@@ -515,28 +559,43 @@ li { padding: 10px; background: #f9f9f9; margin: 5px 0; border-radius: 4px; }`,
 // Health check endpoint
 app.get('/api/health', async (req, res) => {
   try {
-    // Check if Ollama is running
-    const response = await fetch(`${OLLAMA_URL}/api/tags`)
-    const isOllamaRunning = response.ok
+    // Check if Gemini API is accessible
+    const testResponse = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        contents: [{
+          parts: [{
+            text: 'Hello'
+          }]
+        }],
+        generationConfig: {
+          maxOutputTokens: 10
+        }
+      })
+    })
+    const isGeminiRunning = testResponse.ok
     
     res.json({ 
       status: 'ok', 
       timestamp: new Date().toISOString(),
-      ollama: {
-        url: OLLAMA_URL,
-        model: OLLAMA_MODEL,
-        running: isOllamaRunning
+      gemini: {
+        model: GEMINI_MODEL,
+        running: isGeminiRunning,
+        apiKey: GEMINI_API_KEY ? 'configured' : 'missing'
       }
     })
   } catch (error) {
     res.json({ 
       status: 'ok', 
       timestamp: new Date().toISOString(),
-      ollama: {
-        url: OLLAMA_URL,
-        model: OLLAMA_MODEL,
+      gemini: {
+        model: GEMINI_MODEL,
         running: false,
-        error: 'Could not connect to Ollama'
+        apiKey: GEMINI_API_KEY ? 'configured' : 'missing',
+        error: 'Could not connect to Gemini API'
       }
     })
   }
@@ -544,8 +603,8 @@ app.get('/api/health', async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`)
-  console.log(`Ollama URL: ${OLLAMA_URL}`)
-  console.log(`Ollama Model: ${OLLAMA_MODEL}`)
-  console.log('\n🤖 Make sure Ollama is running with: ollama serve')
-  console.log(`📦 Make sure you have a model installed, for example: ollama pull ${OLLAMA_MODEL}`)
+  console.log(`Gemini Model: ${GEMINI_MODEL}`)
+  console.log(`Gemini API Key: ${GEMINI_API_KEY ? 'configured' : 'missing'}`)
+  console.log('\n🤖 Using Google Gemini API for code generation')
+  console.log(`📦 Model: ${GEMINI_MODEL}`)
 })

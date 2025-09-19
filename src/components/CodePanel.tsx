@@ -1,19 +1,57 @@
 import { useState, useEffect } from 'react'
 import { Highlight, themes } from 'prism-react-renderer'
-import { Play, Code, Eye, Copy, Check } from 'lucide-react'
+import { Play, Code, Eye, Copy, Check, Shield, Download, History, Undo, Redo } from 'lucide-react'
+import { CodePanelProps, GeneratedCode } from '../types'
+import ExportPanel from './ExportPanel'
 
-function CodePanel({ code, onCodeChange }) {
-  const [activeTab, setActiveTab] = useState('preview')
-  const [activeCodeTab, setActiveCodeTab] = useState('html')
-  const [copiedTab, setCopiedTab] = useState('')
+interface CodePanelPropsWithHistory extends CodePanelProps {
+  onShowHistory?: () => void;
+}
+
+function CodePanel({ code, onCodeChange, onCodeHistory, canUndo, canRedo, onValidate, onShowHistory }: CodePanelPropsWithHistory) {
+  const [activeTab, setActiveTab] = useState<'preview' | 'code'>('preview')
+  const [activeCodeTab, setActiveCodeTab] = useState<'html' | 'css' | 'js'>('html')
+  const [copiedTab, setCopiedTab] = useState<string>('')
+  const [showExport, setShowExport] = useState<boolean>(false)
 
   // Debug logging
   useEffect(() => {
     console.log('CodePanel received code:', code)
   }, [code])
 
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        switch (e.key) {
+          case '1':
+            e.preventDefault();
+            setActiveTab('preview');
+            break;
+          case '2':
+            e.preventDefault();
+            setActiveTab('code');
+            break;
+          case 'e':
+            e.preventDefault();
+            if (onValidate) {
+              onValidate();
+            }
+            break;
+          case 's':
+            e.preventDefault();
+            setShowExport(true);
+            break;
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onValidate])
+
   // Copy to clipboard function
-  const copyToClipboard = async (codeContent, tabName) => {
+  const copyToClipboard = async (codeContent: string, tabName: string): Promise<void> => {
     try {
       await navigator.clipboard.writeText(codeContent)
       setCopiedTab(tabName)
@@ -69,7 +107,7 @@ function CodePanel({ code, onCodeChange }) {
     { id: 'js', label: 'JavaScript', language: 'javascript' },
   ]
 
-  const handleCodeEdit = (language, newCode) => {
+  const handleCodeEdit = (language: keyof GeneratedCode, newCode: string): void => {
     onCodeChange({
       ...code,
       [language]: newCode
@@ -138,19 +176,68 @@ function CodePanel({ code, onCodeChange }) {
                 </button>
               ))}
             </div>
-            {code[activeCodeTab] && (
+            <div className="code-actions">
+              {onCodeHistory && (
+                <div className="history-controls">
+                  <button
+                    className="history-button"
+                    onClick={() => onCodeHistory('prev')}
+                    disabled={!canUndo}
+                    title="Undo (Ctrl+Z)"
+                  >
+                    <Undo size={14} />
+                  </button>
+                  <button
+                    className="history-button"
+                    onClick={() => onCodeHistory('next')}
+                    disabled={!canRedo}
+                    title="Redo (Ctrl+Y)"
+                  >
+                    <Redo size={14} />
+                  </button>
+                  {onShowHistory && (
+                    <button
+                      className="history-button"
+                      onClick={onShowHistory}
+                      title="Show History (Ctrl+H)"
+                    >
+                      <History size={14} />
+                    </button>
+                  )}
+                </div>
+              )}
               <button
-                className="copy-button"
-                onClick={() => copyToClipboard(code[activeCodeTab], activeCodeTab)}
-                title={`Copy ${activeCodeTab.toUpperCase()} code`}
+                className="export-button"
+                onClick={() => setShowExport(true)}
+                title="Export project"
               >
-                {copiedTab === activeCodeTab ? (
-                  <><Check size={14} /> Copied!</>
-                ) : (
-                  <><Copy size={14} /> Copy</>
-                )}
+                <Download size={14} />
+                Export
               </button>
-            )}
+              {onValidate && (
+                <button
+                  className="validate-button"
+                  onClick={onValidate}
+                  title="Validate code"
+                >
+                  <Shield size={14} />
+                  Validate
+                </button>
+              )}
+              {code[activeCodeTab] && (
+                <button
+                  className="copy-button"
+                  onClick={() => copyToClipboard(code[activeCodeTab], activeCodeTab)}
+                  title={`Copy ${activeCodeTab.toUpperCase()} code`}
+                >
+                  {copiedTab === activeCodeTab ? (
+                    <><Check size={14} /> Copied!</>
+                  ) : (
+                    <><Copy size={14} /> Copy</>
+                  )}
+                </button>
+              )}
+            </div>
           </div>
           
           <div className="code-content">
@@ -214,6 +301,12 @@ function CodePanel({ code, onCodeChange }) {
           </div>
         </div>
       )}
+      
+      <ExportPanel 
+        code={code}
+        isOpen={showExport}
+        onClose={() => setShowExport(false)}
+      />
     </div>
   )
 }

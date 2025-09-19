@@ -1,10 +1,16 @@
-import { Send } from "lucide-react";
+import { Send, HelpCircle } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { ChatPanelProps } from "../types";
+import ThemeToggle from "./ThemeToggle";
 
-function ChatPanel({ messages, onSendMessage, isLoading }) {
-  const [inputValue, setInputValue] = useState("");
-  const messagesEndRef = useRef(null);
-  const textareaRef = useRef(null);
+interface ChatPanelPropsWithShortcuts extends ChatPanelProps {
+  onShowShortcuts?: () => void;
+}
+
+function ChatPanel({ messages, onSendMessage, isLoading, error, onShowShortcuts }: ChatPanelPropsWithShortcuts) {
+  const [inputValue, setInputValue] = useState<string>("");
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -31,7 +37,7 @@ function ChatPanel({ messages, onSendMessage, isLoading }) {
     scrollToBottom();
   }, [isLoading]);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (inputValue.trim() && !isLoading) {
       onSendMessage(inputValue.trim());
@@ -39,10 +45,26 @@ function ChatPanel({ messages, onSendMessage, isLoading }) {
     }
   };
 
-  const handleKeyDown = (e) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      handleSubmit(e);
+      handleSubmit(e as any);
+    }
+    
+    // Keyboard shortcuts
+    if (e.ctrlKey || e.metaKey) {
+      switch (e.key) {
+        case 'k':
+          e.preventDefault();
+          // Focus on input
+          textareaRef.current?.focus();
+          break;
+        case '/':
+          e.preventDefault();
+          // Show help or focus input
+          textareaRef.current?.focus();
+          break;
+      }
     }
   };
 
@@ -58,6 +80,18 @@ function ChatPanel({ messages, onSendMessage, isLoading }) {
                 AI Code Generator - Describe what you want to build!
               </p>
             </div>
+          </div>
+          <div className="header-actions">
+            {onShowShortcuts && (
+              <button
+                className="help-button"
+                onClick={onShowShortcuts}
+                title="Keyboard shortcuts (Ctrl+/)"
+              >
+                <HelpCircle size={18} />
+              </button>
+            )}
+            <ThemeToggle />
           </div>
         </div>
       </div>
@@ -109,6 +143,19 @@ function ChatPanel({ messages, onSendMessage, isLoading }) {
                 <div className="loading">
                   <div className="spinner"></div>
                   Generating code...
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {error && (
+          <div className="message-wrapper assistant">
+            <div className="message assistant error-message">
+              <div className="message-avatar">⚠️</div>
+              <div className="message-content">
+                <div className="error-text">
+                  <strong>Error:</strong> {error}
                 </div>
               </div>
             </div>
